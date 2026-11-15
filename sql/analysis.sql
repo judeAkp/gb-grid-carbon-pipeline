@@ -27,7 +27,7 @@ WHERE t.month_start = '2026-09-01'
 GROUP BY t.local_hour
 ORDER BY avg_gco2_per_kwh DESC;
 
--- 3. Three cleanest and dirtiest days
+-- 3. Three cleanest and dirtiest complete local days
 WITH daily AS (
     SELECT t.local_date,
            AVG(CAST(i.actual_gco2_kwh AS FLOAT)) AS avg_gco2_per_kwh
@@ -37,6 +37,8 @@ WITH daily AS (
       AND t.local_date >= '2026-09-01'
       AND t.local_date < '2026-10-01'
     GROUP BY t.local_date
+    -- Require 48 half-hour periods so partial boundary days cannot rank.
+    HAVING COUNT(*) = 48
 ),
 ranked AS (
     SELECT local_date,

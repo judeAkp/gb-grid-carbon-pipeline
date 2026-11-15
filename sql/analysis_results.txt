@@ -35,7 +35,7 @@ local_hour | avg_gco2_per_kwh | periods
 13         | 74.5             | 60
 Rows: 24
 
-3. Three cleanest and dirtiest local September days
+3. Three cleanest and dirtiest complete local September days
 ranking | rank_order | local_date | avg_gco2_per_kwh
 cleanest | 1          | 2026-09-19 | 60.4
 cleanest | 2          | 2026-09-18 | 61.4

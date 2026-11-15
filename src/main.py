@@ -3,13 +3,12 @@
 import argparse
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 
 from src.extract import extract_month
 from src.load import load_month
-from src.transform import (build_dim_fuel, build_dim_time, build_facts,
-                           build_generation_long, build_intensity,
-                           run_quality_checks)
+from src.transform import DataQualityError, build_tables
 
 LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(message)s"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -56,29 +55,28 @@ def run(month):
     log.info("start %s for %s", "grid pipeline", month)
 
     payload = extract_month(month)
-    generation = build_generation_long(payload["generation"])
-    intensity = build_intensity(payload["intensity"])
-    log.info("extracted %s generation rows, %s intensity rows",
-             len(generation), len(intensity))
-
-    failures = run_quality_checks(generation, intensity)
-    if failures:
-        for failure in failures:
+    extracted_generation_rows = sum(
+        len(period["generationmix"]) for period in payload["generation"]
+    )
+    extracted_intensity_rows = len(payload["intensity"])
+    try:
+        tables = build_tables(payload, month)
+    except DataQualityError as error:
+        for failure in error.failures:
             log.error("quality check failed: %s", failure)
         log.error("aborting - nothing loaded")
         return 1
 
-    dim_time = build_dim_time(generation, month)
-    dim_fuel = build_dim_fuel(generation)
-    fact_generation, fact_intensity = build_facts(
-        generation, intensity, dim_time, dim_fuel)
-
-    tables = {"dim_fuel": dim_fuel, "dim_time": dim_time,
-              "fact_generation": fact_generation,
-              "fact_intensity": fact_intensity}
+    log.info(
+        "extracted %s generation rows -> in-month %s; "
+        "extracted %s intensity rows -> in-month %s",
+        f"{extracted_generation_rows:,}",
+        f"{len(tables['fact_generation']):,}",
+        f"{extracted_intensity_rows:,}",
+        f"{len(tables['fact_intensity']):,}",
+    )
+    tables = load_month(tables, month_start=date.fromisoformat(f"{month}-01"))
     write_processed_csvs(month, tables)
-    load_month(tables,
-               month_start=f"{month}-01")
 
     log.info("finished successfully")
     return 0

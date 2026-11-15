@@ -14,8 +14,8 @@ SQL Server (dim_fuel, dim_time, fact_generation, fact_intensity) -> SQL analysis
 - Wind averaged 38.03% versus gas 21.16% - wind was the single largest source.
 - The grid was twice as carbon intensive at 19:00 local time (~150 gCO2/kWh)
   as at 13:00 (~74) - evening demand peak versus midday solar.
-- The cleanest day was September 19 (60.4 gCO2/kWh); the dirtiest was
-  September 22 (190.0 gCO2/kWh).
+- Among complete local days, the cleanest was September 19 (60.4 gCO2/kWh)
+  and the dirtiest was September 22 (190.0 gCO2/kWh).
 - Weekend intensity averaged 91.0 gCO2/kWh, below the weekday average of
   114.3 gCO2/kWh.
 - 59% of half-hour periods came in above the published forecast
@@ -44,8 +44,12 @@ covered by tests.
 ## Design notes
 - Periods are attributed by their END timestamp, so a 23:30->00:00 period
   belongs to the month it ends in. Month reloads are therefore idempotent.
-- Surrogate keys (time_key, fuel_key) are assigned deterministically from
-  sorted values, not IDENTITY, so reloads reproduce identical keys.
+- Generation and intensity rows are filtered to the `dim_time` period keys
+  before fact construction; September's 12,969 extracted generation rows
+  become 12,960 in-month rows.
+- Time keys and initial fuel keys are assigned deterministically from sorted
+  values. The loader preserves existing fuel keys and appends new fuel members
+  with unused keys so new categories cannot shift existing facts.
 - Percentages use DECIMAL(5,2); a CHECK constraint enforces 0-100.
 - `data/processed/` contains SQL-shaped CSV exports; the committed sample is
   sorted by time and fuel key.

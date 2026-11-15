@@ -9,14 +9,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 from config import PIPELINE_NAME, engine_url
-from src.transform import (
-    build_dim_fuel,
-    build_dim_time,
-    build_facts,
-    build_generation_long,
-    build_intensity,
-    run_quality_checks,
-)
+from src.transform import build_tables
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DDL_PATH = PROJECT_ROOT / "sql" / "ddl.sql"
@@ -49,6 +42,54 @@ def delete_month(conn, month_start):
                  {"m": month_start})
 
 
+def ensure_fuel_members(conn, dim_fuel):
+    existing_rows = conn.execute(text(
+        "SELECT fuel_key, fuel_name "
+        "FROM dbo.dim_fuel WITH (UPDLOCK, HOLDLOCK)"
+    )).fetchall()
+    existing_fuels = {fuel_name: int(fuel_key)
+                      for fuel_key, fuel_name in existing_rows}
+    next_fuel_key = max(existing_fuels.values(), default=0) + 1
+    source_to_database_key = {}
+
+    insert_missing = text(
+        "INSERT INTO dbo.dim_fuel "
+        "(fuel_key, fuel_name, fuel_group, is_renewable) "
+        "SELECT :fuel_key, :fuel_name, :fuel_group, :is_renewable "
+        "WHERE NOT EXISTS ("
+        "SELECT 1 FROM dbo.dim_fuel WITH (UPDLOCK, HOLDLOCK) "
+        "WHERE fuel_name = :fuel_name)"
+    )
+    for row in dim_fuel.to_dict("records"):
+        source_key = int(row["fuel_key"])
+        fuel_name = row["fuel_name"]
+        database_key = existing_fuels.get(fuel_name)
+        if database_key is None:
+            if next_fuel_key > 255:
+                raise OverflowError("dim_fuel TINYINT key capacity is exhausted")
+            database_key = next_fuel_key
+            conn.execute(insert_missing, {
+                "fuel_key": database_key,
+                "fuel_name": fuel_name,
+                "fuel_group": row["fuel_group"],
+                "is_renewable": int(row["is_renewable"]),
+            })
+            existing_fuels[fuel_name] = database_key
+            next_fuel_key += 1
+        source_to_database_key[source_key] = database_key
+
+    return source_to_database_key
+
+
+def remap_fuel_keys(frame, source_to_database_key):
+    remapped = frame.copy()
+    remapped_keys = remapped["fuel_key"].map(source_to_database_key)
+    if remapped_keys.isna().any():
+        raise RuntimeError("fuel key is absent from dim_fuel")
+    remapped["fuel_key"] = remapped_keys.astype("int64")
+    return remapped
+
+
 def load_month(tables, month_start):
     engine = get_engine()
     ensure_tables(engine)
@@ -64,19 +105,24 @@ def load_month(tables, month_start):
     with engine.begin() as conn:
         delete_month(conn, month_start)
 
-        # dims first (facts reference them)
-        if conn.execute(text("SELECT COUNT(*) FROM dbo.dim_fuel")).scalar() == 0:
-            dim_fuel.to_sql(
-                "dim_fuel", conn, schema="dbo", if_exists="append", index=False
-            )
+        loaded_tables = dict(tables)
+        fuel_key_map = ensure_fuel_members(conn, dim_fuel)
+        loaded_tables["dim_fuel"] = remap_fuel_keys(
+            tables["dim_fuel"], fuel_key_map
+        )
+        loaded_tables["fact_generation"] = remap_fuel_keys(
+            tables["fact_generation"], fuel_key_map
+        )
 
         dim_time.to_sql("dim_time", conn, schema="dbo", if_exists="append", index=False)
-        tables["fact_generation"].to_sql("fact_generation", conn,
-                                         schema="dbo", if_exists="append", index=False)
-        tables["fact_intensity"].to_sql("fact_intensity", conn,
-                                        schema="dbo", if_exists="append", index=False)
+        loaded_tables["fact_generation"].to_sql(
+            "fact_generation", conn, schema="dbo", if_exists="append", index=False
+        )
+        loaded_tables["fact_intensity"].to_sql(
+            "fact_intensity", conn, schema="dbo", if_exists="append", index=False
+        )
 
-        verify_counts(conn, tables, month_start)
+        verify_counts(conn, loaded_tables, month_start)
 
         finished = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
         conn.execute(text(
@@ -84,11 +130,13 @@ def load_month(tables, month_start):
             "finished_at_utc, rows_generation, rows_intensity, status, message) "
             "VALUES (:p, :m, :s, :f, :g, :i, 'success', :msg)"),
             {"p": PIPELINE_NAME, "m": month_start, "s": started, "f": finished,
-             "g": len(tables["fact_generation"]), "i": len(tables["fact_intensity"]),
+             "g": len(loaded_tables["fact_generation"]),
+             "i": len(loaded_tables["fact_intensity"]),
              "msg": "quality checks passed"})
 
     print(f"✅ loaded {len(tables['fact_generation'])} generation rows, "
           f"{len(tables['fact_intensity'])} intensity rows")
+    return loaded_tables
 
 
 def verify_counts(conn, tables, month_start):
@@ -132,26 +180,8 @@ def load_latest_month(month):
         ),
     }
 
-    generation_long = build_generation_long(raw_payload["generation"])
-    intensity = build_intensity(raw_payload["intensity"])
-    failures = run_quality_checks(generation_long, intensity)
-    if failures:
-        raise RuntimeError("Data quality checks failed: " + "; ".join(failures))
-
-    dim_time = build_dim_time(generation_long, month)
-    dim_fuel = build_dim_fuel(generation_long)
-    fact_generation, fact_intensity = build_facts(
-        generation_long, intensity, dim_time, dim_fuel
-    )
-    load_month(
-        {
-            "dim_fuel": dim_fuel,
-            "dim_time": dim_time,
-            "fact_generation": fact_generation,
-            "fact_intensity": fact_intensity,
-        },
-        date.fromisoformat(f"{month}-01"),
-    )
+    tables = build_tables(raw_payload, month)
+    load_month(tables, date.fromisoformat(f"{month}-01"))
 
 
 if __name__ == "__main__":

@@ -106,3 +106,38 @@ def run_quality_checks(generation_long, intensity):
     if intensity[["actual_gco2_kwh", "forecast_gco2_kwh"]].isna().any().any():
         failures.append("null carbon intensity values")
     return failures
+
+
+class DataQualityError(RuntimeError):
+    def __init__(self, failures):
+        self.failures = failures
+        super().__init__("Data quality checks failed: " + "; ".join(failures))
+
+
+def build_tables(payload, month):
+    generation = build_generation_long(payload["generation"])
+    intensity = build_intensity(payload["intensity"])
+
+    failures = run_quality_checks(generation, intensity)
+    if failures:
+        raise DataQualityError(failures)
+
+    dim_time = build_dim_time(generation, month)
+    in_month_periods = dim_time["period_start_utc"]
+    generation_in_month = generation.loc[
+        generation["period_start_utc"].isin(in_month_periods)
+    ].copy()
+    intensity_in_month = intensity.loc[
+        intensity["period_start_utc"].isin(in_month_periods)
+    ].copy()
+    dim_fuel = build_dim_fuel(generation_in_month)
+    fact_generation, fact_intensity = build_facts(
+        generation_in_month, intensity_in_month, dim_time, dim_fuel
+    )
+
+    return {
+        "dim_fuel": dim_fuel,
+        "dim_time": dim_time,
+        "fact_generation": fact_generation,
+        "fact_intensity": fact_intensity,
+    }

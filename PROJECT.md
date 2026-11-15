@@ -38,7 +38,10 @@ and data that can be reused with attribution under CC BY 4.0.
 > boundaries. The pipeline attributes periods by their UTC end timestamp, so
 > September has 1,440 time periods even though the raw response has 1,441.
 > Because reporting dates use London time, a final period can fall on
-> 1 October locally; daily September queries filter to local September dates.
+> 1 October locally; daily September queries filter to local September dates
+> and require 48 half-hour periods for a full day. Generation and intensity
+> rows are filtered to the selected `dim_time` period keys before fact
+> construction, dropping boundary rows outside the UTC month window.
 
 ### Required attribution
 
@@ -91,8 +94,9 @@ Answers to the six questions above
 - **Use a star schema.** Keep generation and intensity in separate fact tables
   that share `dim_time`. Store renewable/fossil/other classifications in
   `dim_fuel`, not in every fact row.
-- **Use deterministic keys.** Assign `time_key` and `fuel_key` from sorted
-  values rather than `IDENTITY`, so repeated runs reproduce the same keys.
+- **Keep keys stable.** Assign `time_key` and initial `fuel_key` values from
+  sorted values rather than `IDENTITY`. Preserve existing fuel keys and append
+  new members with unused keys so adding a category cannot rekey old facts.
 - **Make month loads idempotent.** Delete and reinsert that month's time and
   fact rows inside one transaction; verify row counts after insertion.
 - **Enforce a data-quality gate.** Stop before loading if a period's fuel mix
