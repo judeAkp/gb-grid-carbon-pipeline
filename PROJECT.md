@@ -31,12 +31,14 @@ and data that can be reused with attribution under CC BY 4.0.
 | Endpoints | `/generation/{from}/{to}` for fuel mix; `/intensity/{from}/{to}` for forecast and actual carbon intensity |
 | Grain | 30-minute settlement periods for Great Britain; Northern Ireland is excluded |
 | Timestamps | UTC (`Z`); reporting attributes use `Europe/London` |
-| Fuel rows | September 2026 returns 1,441 raw periods (12,969 fuel rows); month attribution produces 1,440 time periods |
+| Fuel rows | September 2026 returns 1,441 raw periods (12,969 fuel rows); UTC month attribution produces 1,440 time periods |
 | Licence | CC BY 4.0; attribution is required, and the API itself must not be resold |
 
-> **Boundary note:** The API response includes an interval at the month
-> boundary. The pipeline attributes periods by their end timestamp, so the
-> transformed month has 1,440 periods even though the raw response has 1,441.
+> **Boundary note:** The API response includes intervals at the month
+> boundaries. The pipeline attributes periods by their UTC end timestamp, so
+> September has 1,440 time periods even though the raw response has 1,441.
+> Because reporting dates use London time, a final period can fall on
+> 1 October locally; daily September queries filter to local September dates.
 
 ### Required attribution
 
@@ -66,7 +68,7 @@ data/raw/YYYY-MM/ — immutable, gitignored, replayable snapshots
    |
    | src/transform.py — flatten JSON, build dimensions and facts, validate
    v
-In-memory pandas DataFrames
+data/processed/ — month-specific CSV exports and a committed 100-row sample
    |
    | src/load.py — create tables and load idempotently
    v
@@ -78,9 +80,9 @@ SQL Server: DE_Learning
 Answers to the six questions above
 ```
 
-> **Implementation note:** `data/processed/` is reserved for optional
-> processed exports. The current pipeline passes transformed DataFrames
-> directly to SQL Server; it does not write per-table CSV files there.
+> **Evidence:** Full month-specific CSV exports are generated locally and
+> gitignored. A 100-row generation-fact sample and the six SQL result sets are
+> committed so reviewers can inspect pipeline output without a SQL Server.
 
 ## 5. Design decisions
 

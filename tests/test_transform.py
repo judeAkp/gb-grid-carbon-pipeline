@@ -3,6 +3,7 @@ import pytest
 
 from src.transform import (build_dim_fuel, build_dim_time, classify_fuel,
                            run_quality_checks)
+from src.main import write_processed_csvs
 
 
 def test_classify_fuel():
@@ -52,3 +53,44 @@ def test_quality_gate_catches_duplicates():
     })
     good_intensity = pd.DataFrame({"actual_gco2_kwh": [100], "forecast_gco2_kwh": [90]})
     assert any("duplicate" in f for f in run_quality_checks(dup, good_intensity))
+
+
+def test_processed_csvs_include_all_tables_and_a_100_row_sample(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.main.PROCESSED_DIR", tmp_path)
+    tables = {
+        "dim_fuel": pd.DataFrame({
+            "fuel_key": [1],
+            "fuel": ["wind"],
+            "fuel_group": ["renewable"],
+            "is_renewable": [1],
+        }),
+        "dim_time": pd.DataFrame({
+            "period_start_utc": ["2026-09-01T00:00Z"],
+            "period_end_utc": ["2026-09-01T00:30Z"],
+            "period_end": [pd.Timestamp("2026-09-01T00:30Z")],
+            "time_key": [1],
+        }),
+        "fact_generation": pd.DataFrame({
+            "time_key": range(1, 121),
+            "fuel_key": [1] * 120,
+            "percentage": [50.0] * 120,
+        }),
+        "fact_intensity": pd.DataFrame({
+            "time_key": [1],
+            "forecast_gco2_kwh": [100],
+            "actual_gco2_kwh": [95],
+            "intensity_index": ["moderate"],
+        }),
+    }
+
+    write_processed_csvs("2026-09", tables)
+
+    assert pd.read_csv(tmp_path / "dim_fuel_2026-09.csv").columns.tolist() == [
+        "fuel_key", "fuel_name", "fuel_group", "is_renewable"
+    ]
+    assert "period_end" not in pd.read_csv(
+        tmp_path / "dim_time_2026-09.csv"
+    ).columns
+    assert len(pd.read_csv(tmp_path / "fact_generation_2026-09.csv")) == 120
+    assert len(pd.read_csv(tmp_path / "fact_intensity_2026-09.csv")) == 1
+    assert len(pd.read_csv(tmp_path / "fact_generation_sample.csv")) == 100

@@ -3,6 +3,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from src.extract import extract_month
 from src.load import load_month
@@ -11,6 +12,8 @@ from src.transform import (build_dim_fuel, build_dim_time, build_facts,
                            run_quality_checks)
 
 LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(message)s"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 
 def setup_logging():
@@ -20,6 +23,32 @@ def setup_logging():
         handlers=[logging.FileHandler("pipeline.log", encoding="utf-8"),
                   logging.StreamHandler(sys.stdout)],
     )
+
+
+def write_processed_csvs(month, tables):
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    processed_tables = {
+        "dim_fuel": tables["dim_fuel"].rename(columns={"fuel": "fuel_name"})[
+            ["fuel_key", "fuel_name", "fuel_group", "is_renewable"]
+        ],
+        "dim_time": tables["dim_time"].drop(columns=["period_end"]),
+        "fact_generation": tables["fact_generation"].sort_values(
+            ["time_key", "fuel_key"]
+        ).reset_index(drop=True),
+        "fact_intensity": tables["fact_intensity"].sort_values(
+            "time_key"
+        ).reset_index(drop=True),
+    }
+
+    log = logging.getLogger("pipeline")
+    for table_name, frame in processed_tables.items():
+        path = PROCESSED_DIR / f"{table_name}_{month}.csv"
+        frame.to_csv(path, index=False)
+        log.info("wrote %s", path.name)
+
+    sample_path = PROCESSED_DIR / "fact_generation_sample.csv"
+    processed_tables["fact_generation"].head(100).to_csv(sample_path, index=False)
+    log.info("wrote %s (first 100 fact rows)", sample_path.name)
 
 
 def run(month):
@@ -44,9 +73,11 @@ def run(month):
     fact_generation, fact_intensity = build_facts(
         generation, intensity, dim_time, dim_fuel)
 
-    load_month({"dim_fuel": dim_fuel, "dim_time": dim_time,
-                "fact_generation": fact_generation,
-                "fact_intensity": fact_intensity},
+    tables = {"dim_fuel": dim_fuel, "dim_time": dim_time,
+              "fact_generation": fact_generation,
+              "fact_intensity": fact_intensity}
+    write_processed_csvs(month, tables)
+    load_month(tables,
                month_start=f"{month}-01")
 
     log.info("finished successfully")

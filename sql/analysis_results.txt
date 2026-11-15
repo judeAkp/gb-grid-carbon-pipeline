@@ -1,0 +1,63 @@
+SQL analysis results
+Dataset: September 2026
+Source: the six statements in sql/analysis.sql, executed against DE_Learning
+
+1. Renewable share across half-hour periods
+avg_renewable_share_pct | min_share | max_share
+55.370000               | 21.40     | 81.00
+Rows: 1
+
+2. Average carbon intensity by local hour
+local_hour | avg_gco2_per_kwh | periods
+19         | 150.1            | 60
+20         | 144.6            | 60
+18         | 143.6            | 60
+21         | 136.5            | 60
+22         | 126.6            | 60
+7          | 125.5            | 60
+17         | 124.7            | 60
+6          | 122.0            | 60
+23         | 116.1            | 60
+8          | 112.1            | 60
+5          | 108.8            | 60
+0          | 108.2            | 58
+1          | 102.5            | 60
+4          | 102.4            | 60
+16         | 101.1            | 60
+2          | 99.2             | 60
+3          | 99.2             | 60
+9          | 96.8             | 60
+10         | 85.2             | 60
+15         | 83.5             | 60
+11         | 78.0             | 60
+14         | 76.2             | 60
+12         | 75.1             | 60
+13         | 74.5             | 60
+Rows: 24
+
+3. Three cleanest and dirtiest local September days
+ranking | rank_order | local_date | avg_gco2_per_kwh
+cleanest | 1          | 2026-09-19 | 60.4
+cleanest | 2          | 2026-09-18 | 61.4
+cleanest | 3          | 2026-09-17 | 66.8
+dirtiest | 1          | 2026-09-22 | 190.0
+dirtiest | 2          | 2026-09-28 | 179.8
+dirtiest | 3          | 2026-09-13 | 161.6
+Rows: 6
+
+4. Average and peak generation share for wind and gas
+fuel_name | avg_share_pct | peak_share_pct
+wind      | 38.030000     | 72.80
+gas       | 21.160000     | 50.90
+Rows: 2
+
+5. Average intensity on weekdays and weekends
+is_weekend | day_type | avg_gco2_per_kwh | periods
+False      | weekday  | 114.3            | 1056
+True       | weekend  | 91.0             | 384
+Rows: 2
+
+6. Actual intensity compared with forecast
+pct_above_forecast | mean_bias
+59.000000000000    | 5.6
+Rows: 1

@@ -6,22 +6,30 @@ reshapes it into a star schema in SQL Server, and answers six analytical
 questions in SQL.
 
 ## What it does
-API -> raw JSON snapshot -> pandas (flatten, validate) -> SQL Server
-(dim_fuel, dim_time, fact_generation, fact_intensity) -> SQL analysis
+API -> raw JSON snapshot -> pandas (flatten, validate) -> processed CSVs and
+SQL Server (dim_fuel, dim_time, fact_generation, fact_intensity) -> SQL analysis
 
 ## Findings (September 2026)
 - Renewables supplied 55.4% of GB electricity on average (range 21.4%-81.0%).
-- Wind averaged 38.0% versus gas 21.2% - wind was the single largest source.
+- Wind averaged 38.03% versus gas 21.16% - wind was the single largest source.
 - The grid was twice as carbon intensive at 19:00 local time (~150 gCO2/kWh)
   as at 13:00 (~74) - evening demand peak versus midday solar.
-- Weekends averaged 92 gCO2/kWh against 114 on weekdays (~19% cleaner).
+- The cleanest day was September 19 (60.4 gCO2/kWh); the dirtiest was
+  September 22 (190.0 gCO2/kWh).
+- Weekend intensity averaged 91.0 gCO2/kWh, below the weekday average of
+  114.3 gCO2/kWh.
 - 59% of half-hour periods came in above the published forecast
-  (mean bias +5.6 gCO2/kWh) - the forecast is slightly optimistic.
+  (mean bias about +5.6 gCO2/kWh) - the forecast is slightly optimistic.
 
 ## How to run
     pip install -r requirements.txt
     python -m src.main --month 2026-09
     pytest -q
+
+Each run writes month-specific processed CSVs to `data/processed/`. Those
+generated files are gitignored; `data/processed/fact_generation_sample.csv`
+contains 100 real fact rows as a reviewable example. The six query outputs from
+the loaded September 2026 database are in `sql/analysis_results.txt`.
 
 Requires SQL Server with a database called DE_Learning, and ODBC Driver 18.
 The pipeline is idempotent: running it twice for the same month does not
@@ -39,6 +47,8 @@ covered by tests.
 - Surrogate keys (time_key, fuel_key) are assigned deterministically from
   sorted values, not IDENTITY, so reloads reproduce identical keys.
 - Percentages use DECIMAL(5,2); a CHECK constraint enforces 0-100.
+- `data/processed/` contains SQL-shaped CSV exports; the committed sample is
+  sorted by time and fuel key.
 
 ## Attribution
 Contains data from the Carbon Intensity API by National Energy System
